@@ -11,6 +11,7 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_vie
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer, LayerSurface};
 
+use crate::cli::Options;
 use crate::geometry::Size;
 use crate::renderer::Renderer;
 use crate::wayland::ProtocolStates;
@@ -23,6 +24,7 @@ pub struct Window {
     viewport: WpViewport,
     renderer: Renderer,
 
+    options: Options,
 
     size: Size,
     scale: f64,
@@ -33,6 +35,7 @@ impl Window {
         protocol_states: &ProtocolStates,
         connection: &Connection,
         queue: &QueueHandle<State>,
+        options: Options,
     ) -> Result<Self, Error> {
         // Get EGL display.
         let display = NonNull::new(connection.backend().display_ptr().cast()).unwrap();
@@ -64,15 +67,20 @@ impl Window {
         let viewport = protocol_states.viewporter.viewport(queue, wl_surface);
 
         // If SPB is supported, use it to draw flat color backgrounds.
-        let spb_buffer = protocol_states
-            .single_pixel_buffer
-            .as_ref()
-            .map(|spb| spb.create_u32_rgba_buffer(u32::MAX, 0, u32::MAX, u32::MAX, queue, ()));
+        let spb_buffer = protocol_states.single_pixel_buffer.as_ref().map(|spb| {
+            let [r, g, b] = [
+                options.color.r as u32 * (u32::MAX / 255),
+                options.color.g as u32 * (u32::MAX / 255),
+                options.color.b as u32 * (u32::MAX / 255),
+            ];
+            spb.create_u32_rgba_buffer(r, g, b, u32::MAX, queue, ())
+        });
 
         Ok(Self {
             spb_buffer,
             viewport,
             renderer,
+            options,
             surface,
             scale: 1.,
             size: Default::default(),
@@ -97,7 +105,12 @@ impl Window {
             None => {
                 let physical_size = self.size * self.scale;
                 self.renderer.draw(physical_size, |_| unsafe {
-                    gl::ClearColor(0., 1., 0., 1.);
+                    let [r, g, b] = [
+                        self.options.color.r as f32 / 255.,
+                        self.options.color.g as f32 / 255.,
+                        self.options.color.b as f32 / 255.,
+                    ];
+                    gl::ClearColor(r, g, b, 1.);
                     gl::Clear(gl::COLOR_BUFFER_BIT);
                 });
             },

@@ -1,5 +1,6 @@
 use std::{env, process};
 
+use clap::Parser;
 use smithay_client_toolkit::reexports::client::globals::{
     self, BindError, GlobalError, GlobalList,
 };
@@ -9,9 +10,11 @@ use smithay_client_toolkit::reexports::client::{
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
+use crate::cli::Options;
 use crate::wayland::ProtocolStates;
 use crate::window::Window;
 
+mod cli;
 mod geometry;
 mod renderer;
 mod wayland;
@@ -37,10 +40,13 @@ fn main() {
 }
 
 fn run() -> Result<(), Error> {
+    // Parse CLI arguments.
+    let options = Options::parse();
+
     // Initialize Wayland connection.
     let connection = Connection::connect_to_env()?;
     let (globals, mut queue) = globals::registry_queue_init(&connection)?;
-    let mut state = State::new(&connection, &globals, &queue.handle())?;
+    let mut state = State::new(&connection, &globals, &queue.handle(), options)?;
 
     // Start event loop.
     while !state.terminated {
@@ -64,11 +70,12 @@ impl State {
         connection: &Connection,
         globals: &GlobalList,
         queue: &QueueHandle<Self>,
+        options: Options,
     ) -> Result<Self, Error> {
         let protocol_states = ProtocolStates::new(globals, queue)?;
 
         // Create the Wayland window.
-        let window = Window::new(&protocol_states, connection, queue)?;
+        let window = Window::new(&protocol_states, connection, queue, options)?;
 
         Ok(Self { protocol_states, window, terminated: Default::default() })
     }
