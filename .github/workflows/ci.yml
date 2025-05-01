@@ -21,11 +21,12 @@ jobs:
         run: |
           oldstable=$(cat Cargo.toml | grep "rust-version" | sed 's/.*"\(.*\)".*/\1/')
           rustup toolchain install --profile minimal $oldstable
-          cargo +$oldstable test
+          rustup default $oldstable
+          cargo test
       - name: Clippy
         run: |
-          rustup +$oldstable component add clippy
-          cargo +$oldstable clippy --all-targets --all-features -- -D warnings
+          rustup component add clippy
+          cargo clippy --all-targets --all-features -- -D warnings
       - name: Rustfmt
         run: |
           rustup toolchain install nightly -c rustfmt
