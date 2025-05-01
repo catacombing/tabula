@@ -1,0 +1,20 @@
+[package]
+name = "tabula"
+version = "0.1.0"
+description = "Wayland Wallpaper Tool"
+authors = ["Christian Duerr <contact@christianduerr.com>"]
+repository = "https://github.com/catacombing/tabula"
+rust-version = "1.85.0"
+license = "GPL-3.0"
+edition = "2024"
+
+[dependencies]
+glutin = { version = "0.32.1", default-features = false, features = ["egl", "wayland"] }
+image = { version = "0.25.6", default-features = false, features = ["png"] }
+raw-window-handle = "0.6.2"
+smithay-client-toolkit = { version = "0.19.2", default-features = false, features = ["xkbcommon"] }
+tokio = "1.44.2"
+wayland-backend = { version = "0.3.10", features = ["client_system"] }
+
+[build-dependencies]
+gl_generator = "0.14.0"
