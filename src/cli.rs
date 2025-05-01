@@ -1,8 +1,11 @@
 //! CLI argument handling.
 
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::Parser;
+
+use crate::geometry::Position;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -10,6 +13,13 @@ pub struct Options {
     /// Background color.
     #[clap(short, long, value_name = "RRGGBB", default_value = "#000000")]
     pub color: Rgb,
+    /// Background image.
+    #[clap(short, long, value_name = "PATH")]
+    pub image: Option<PathBuf>,
+    /// Relative focus point; overflow is distributed evenly around this
+    /// location.
+    #[clap(short, long, value_name = "POINT", default_value = "0.5+0.5")]
+    pub focus: Position<f32>,
 }
 
 /// RGB color.

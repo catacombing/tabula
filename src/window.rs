@@ -1,8 +1,10 @@
 //! Wayland window rendering.
 
+use std::path::Path;
 use std::ptr::NonNull;
 
 use glutin::display::{Display, DisplayApiPreference};
+use image::{ColorType, ImageReader};
 use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle};
 use smithay_client_toolkit::compositor::{CompositorState, Region};
 use smithay_client_toolkit::reexports::client::protocol::wl_buffer::WlBuffer;
@@ -12,19 +14,21 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer, LayerSurface};
 
 use crate::cli::Options;
-use crate::geometry::Size;
-use crate::renderer::Renderer;
+use crate::geometry::{Position, Size};
+use crate::renderer::{Renderer, Texture};
 use crate::wayland::ProtocolStates;
 use crate::{Error, State, gl};
 
 /// Wayland window.
 pub struct Window {
-    spb_buffer: Option<WlBuffer>,
     surface: LayerSurface,
     viewport: WpViewport,
     renderer: Renderer,
 
     options: Options,
+
+    spb_buffer: Option<WlBuffer>,
+    image: Option<Image>,
 
     size: Size,
     scale: f64,
@@ -66,15 +70,24 @@ impl Window {
         }
         let viewport = protocol_states.viewporter.viewport(queue, wl_surface);
 
-        // If SPB is supported, use it to draw flat color backgrounds.
-        let spb_buffer = protocol_states.single_pixel_buffer.as_ref().map(|spb| {
-            let [r, g, b] = [
-                options.color.r as u32 * (u32::MAX / 255),
-                options.color.g as u32 * (u32::MAX / 255),
-                options.color.b as u32 * (u32::MAX / 255),
-            ];
-            spb.create_u32_rgba_buffer(r, g, b, u32::MAX, queue, ())
-        });
+        // Try to load the background image.
+        let image = match &options.image {
+            Some(image_path) => Some(UnloadedImage::new(image_path)?.into()),
+            None => None,
+        };
+
+        // If no image is used and SPB is supported, use it to draw the background.
+        let spb_buffer =
+            protocol_states.single_pixel_buffer.as_ref().filter(|_| options.image.is_none()).map(
+                |spb| {
+                    let [r, g, b] = [
+                        options.color.r as u32 * (u32::MAX / 255),
+                        options.color.g as u32 * (u32::MAX / 255),
+                        options.color.b as u32 * (u32::MAX / 255),
+                    ];
+                    spb.create_u32_rgba_buffer(r, g, b, u32::MAX, queue, ())
+                },
+            );
 
         Ok(Self {
             spb_buffer,
@@ -82,6 +95,7 @@ impl Window {
             renderer,
             options,
             surface,
+            image,
             scale: 1.,
             size: Default::default(),
         })
@@ -104,20 +118,57 @@ impl Window {
             Some(buffer) => wl_surface.attach(Some(buffer), 0, 0),
             None => {
                 let physical_size = self.size * self.scale;
-                self.renderer.draw(physical_size, |_| unsafe {
-                    let [r, g, b] = [
-                        self.options.color.r as f32 / 255.,
-                        self.options.color.g as f32 / 255.,
-                        self.options.color.b as f32 / 255.,
-                    ];
-                    gl::ClearColor(r, g, b, 1.);
-                    gl::Clear(gl::COLOR_BUFFER_BIT);
+                self.renderer.draw(physical_size, |renderer| {
+                    Self::gl_render(renderer, physical_size, &mut self.image, &self.options)
                 });
             },
         }
 
         // Apply surface changes.
         wl_surface.commit();
+    }
+
+    /// Perform OpenGL rendering.
+    fn gl_render(
+        renderer: &Renderer,
+        physical_size: Size,
+        image: &mut Option<Image>,
+        options: &Options,
+    ) {
+        // Render background color.
+        let [r, g, b] = [
+            options.color.r as f32 / 255.,
+            options.color.g as f32 / 255.,
+            options.color.b as f32 / 255.,
+        ];
+        unsafe { gl::ClearColor(r, g, b, 1.) };
+        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT) };
+
+        // Render wallpaper image.
+
+        let image = match image {
+            Some(image) => image,
+            None => return,
+        };
+
+        let physical_size: Size<f32> = physical_size.into();
+        let image_size: Size<f32> = image.size().into();
+        let focus = options.focus;
+
+        // Fit image to screen dimensions.
+        let width_ratio = physical_size.width / image_size.width;
+        let height_ratio = physical_size.height / image_size.height;
+        let (position, size) = if width_ratio < height_ratio {
+            let width = image_size.width * height_ratio;
+            let x = (physical_size.width - width) * focus.x;
+            (Position::new(x, 0.), Size::new(width, physical_size.height))
+        } else {
+            let height = image_size.height * width_ratio;
+            let y = (physical_size.height - height) * focus.y;
+            (Position::new(0., y), Size::new(physical_size.width, height))
+        };
+
+        unsafe { renderer.draw_texture_at(image.texture(), position, size) };
     }
 
     /// Update the window's logical size.
@@ -149,5 +200,72 @@ impl Window {
         self.scale = scale;
 
         self.draw();
+    }
+}
+
+/// OpenGL renderable image.
+enum Image {
+    Loaded(Texture),
+    Unloaded(UnloadedImage),
+}
+
+impl Image {
+    /// Get this image's OpenGL texture.
+    ///
+    /// # Safety
+    ///
+    /// This must be called with the correct context made current, or the image
+    /// will be loaded into an unrelated context.
+    unsafe fn texture(&mut self) -> &Texture {
+        // Load the OpenGL texture.
+        if let Self::Unloaded(image) = self {
+            let texture = Texture::new(&image.bytes, image.width, image.height, image.gl_format);
+            *self = Self::Loaded(texture);
+        }
+
+        match self {
+            Self::Loaded(texture) => texture,
+            Self::Unloaded(_) => unreachable!(),
+        }
+    }
+
+    /// Source image dimensions.
+    fn size(&self) -> Size {
+        match &self {
+            Self::Loaded(texture) => Size::new(texture.width, texture.height),
+            Self::Unloaded(image) => Size::new(image.width, image.height),
+        }
+    }
+}
+
+impl From<UnloadedImage> for Image {
+    fn from(image: UnloadedImage) -> Self {
+        Self::Unloaded(image)
+    }
+}
+
+/// Raw wallpaper image data.
+struct UnloadedImage {
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+    gl_format: u32,
+}
+
+impl UnloadedImage {
+    fn new<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        let image = ImageReader::open(path)?.decode()?;
+
+        let width = image.width();
+        let height = image.height();
+
+        let (bytes, gl_format) = match image.color() {
+            ColorType::La8 => (image.into_luma_alpha8().into_raw(), gl::LUMINANCE_ALPHA),
+            ColorType::L8 => (image.into_luma8().into_raw(), gl::LUMINANCE),
+            ColorType::Rgb8 => (image.into_rgb8().into_raw(), gl::RGB),
+            _ => (image.into_rgba8().into_raw(), gl::RGBA),
+        };
+
+        Ok(Self { gl_format, width, height, bytes })
     }
 }

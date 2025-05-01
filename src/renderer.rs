@@ -62,7 +62,12 @@ impl Renderer {
     ///
     /// Specifying a `size` will automatically scale the texture to render at
     /// the desired size. Otherwise the texture's size will be used instead.
-    pub fn draw_texture_at(
+    ///
+    /// # Safety
+    ///
+    /// This must be called from within [`Self::draw`], to ensure the correct
+    /// context is used for the texture's ID.
+    pub unsafe fn draw_texture_at(
         &self,
         texture: &Texture,
         mut position: Position<f32>,
@@ -292,21 +297,15 @@ impl SizedRenderer {
 /// OpenGL texture.
 #[derive(Debug)]
 pub struct Texture {
-    pub width: usize,
-    pub height: usize,
+    pub width: u32,
+    pub height: u32,
 
     id: u32,
 }
 
 impl Texture {
     /// Load a buffer as texture into OpenGL.
-    pub fn new(buffer: &[u8], width: usize, height: usize) -> Self {
-        Self::new_with_format(buffer, width, height, gl::RGBA)
-    }
-
-    pub fn new_with_format(buffer: &[u8], width: usize, height: usize, color_format: u32) -> Self {
-        assert!(buffer.len() == width * height * 4);
-
+    pub fn new(buffer: &[u8], width: u32, height: u32, color_format: u32) -> Self {
         unsafe {
             let mut id = 0;
             gl::GenTextures(1, &mut id);
@@ -327,16 +326,6 @@ impl Texture {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
             Self { id, width, height }
-        }
-    }
-
-    /// Delete this texture.
-    ///
-    /// Since texture IDs are context-specific, the context must be bound when
-    /// calling this function.
-    pub fn delete(&self) {
-        unsafe {
-            gl::DeleteTextures(1, &self.id);
         }
     }
 }

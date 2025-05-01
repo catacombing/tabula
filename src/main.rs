@@ -1,6 +1,7 @@
 use std::{env, process};
 
 use clap::Parser;
+use image::ImageError;
 use smithay_client_toolkit::reexports::client::globals::{
     self, BindError, GlobalError, GlobalList,
 };
@@ -93,4 +94,8 @@ enum Error {
     WaylandGlobal(#[from] GlobalError),
     #[error("{0}")]
     Glutin(#[from] glutin::error::Error),
+    #[error("{0}")]
+    Image(#[from] ImageError),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
 }
