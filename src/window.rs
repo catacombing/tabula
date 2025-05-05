@@ -57,6 +57,7 @@ impl Window {
             None,
         );
         surface.set_anchor(Anchor::LEFT | Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM);
+        surface.set_exclusive_zone(-1);
         surface.set_size(0, 0);
         surface.commit();
 
