@@ -20,7 +20,6 @@ image = { version = "0.25.6", default-features = false }
 raw-window-handle = "0.6.2"
 smithay-client-toolkit = { version = "0.19.2", default-features = false, features = ["xkbcommon"] }
 thiserror = "2.0.12"
-tokio = "1.44.2"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 wayland-backend = { version = "0.3.10", features = ["client_system"] }
