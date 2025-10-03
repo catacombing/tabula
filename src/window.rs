@@ -47,8 +47,14 @@ impl Window {
         let raw_display = RawDisplayHandle::Wayland(wayland_display);
         let egl_display = unsafe { Display::new(raw_display, DisplayApiPreference::Egl)? };
 
-        // Create the layer shell window.
+        // Create surface's Wayland global handles.
         let surface = protocol_states.compositor.create_surface(queue);
+        if let Some(fractional_scale) = &protocol_states.fractional_scale {
+            fractional_scale.fractional_scaling(queue, &surface);
+        }
+        let viewport = protocol_states.viewporter.viewport(queue, &surface);
+
+        // Create the layer shell window.
         let surface = protocol_states.layer_shell.create_layer_surface(
             queue,
             surface,
@@ -64,12 +70,6 @@ impl Window {
         // Create OpenGL renderer.
         let wl_surface = surface.wl_surface();
         let renderer = Renderer::new(egl_display, wl_surface.clone());
-
-        // Create surface's Wayland global handles.
-        if let Some(fractional_scale) = &protocol_states.fractional_scale {
-            fractional_scale.fractional_scaling(queue, wl_surface);
-        }
-        let viewport = protocol_states.viewporter.viewport(queue, wl_surface);
 
         // Try to load the background image.
         let image = match &options.image {
@@ -200,7 +200,9 @@ impl Window {
 
         self.scale = scale;
 
-        self.draw();
+        if self.size != Size::default() {
+            self.draw();
+        }
     }
 }
 
