@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "tabula"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clap",
  "gl_generator",
