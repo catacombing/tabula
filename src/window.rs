@@ -58,7 +58,7 @@ impl Window {
         let surface = protocol_states.layer_shell.create_layer_surface(
             queue,
             surface,
-            Layer::Bottom,
+            Layer::Background,
             Some("wallpaper"),
             None,
         );
